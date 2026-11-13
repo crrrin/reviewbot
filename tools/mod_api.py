@@ -46,6 +46,21 @@ def refresh(cfg):
 
 
 def _request(method, path, body, tok):
+    """연결이 끊기거나(WinError 10054) 시간이 넘으면 몇 번 다시 해 본다. HTTP 오류(4xx · 5xx)는 다시 하지 않고 그대로 올린다.
+    끝내 안 되면 SystemExit 로 낸다(부르는 쪽이 모두 SystemExit 를 잡는다)."""
+    last = None
+    for i in range(4):
+        try:
+            return _request_once(method, path, body, tok)
+        except urllib.error.HTTPError:
+            raise
+        except (OSError, TimeoutError) as e:          # ConnectionError · URLError · socket.timeout 모두 OSError
+            last = e
+            time.sleep(2 * (i + 1))
+    raise SystemExit(f'{method} {path} -> network error: {last!r}')
+
+
+def _request_once(method, path, body, tok):
     req = urllib.request.Request(BASE + path, method=method, data=None if body is None else json.dumps(body).encode(),
                                  headers={'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json',
                                           'User-Agent': 'reviewbot'})
