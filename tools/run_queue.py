@@ -429,6 +429,7 @@ def main():
         print(sh([os.path.join(HERE, 'mod_api.py'), 'queue', '--out', qf]).stdout.strip())
     q = json.load(open(qf, encoding='utf8'))
     legacy = bool(config().get('legacy_gates'))
+    byid_all = {x['id']: x for x in q}
     registry = video_policy.register_items([x for x in q if isinstance(x.get('payload'), dict)])
     skip = {opt('--queue'), opt('--limit'), opt('--webhook'), opt('--jobs'), opt('--downloads'), opt('--shard')}
     revs = [x for x in a if not x.startswith('--') and x not in skip]
@@ -447,6 +448,14 @@ def main():
                     pass
         revs = review_order(q, [x['id'] for x in q if not x.get('claimed_by_name') and x['id'] not in done_before
                                 and _c.in_shard(x['id'], shard0)])
+        if '--include-gated' not in a:
+            # 합본 · 같은 영상 여러 런 · 타임스탬프 없는 다중 런처럼 도구가 분석하지 않고 곧바로 CHECK 로 내는 건은 자동 대기열에서 뺀다
+            # (한도만 쓰고 메모를 옛것 위에 덮어쓴다). 사람이 combined.py · work/_manual.py 로 따로 판정한다. 목록은 work/gated.txt
+            gated = [r for r in revs if gate_reason(r, byid_all[r], q, legacy)]
+            if gated:
+                open(os.path.join(WORK, 'gated.txt'), 'w', encoding='utf8').write('\n'.join(gated) + '\n')
+                print('gated (left for manual review): ' + ' '.join(gated), flush=True)
+            revs = [r for r in revs if r not in set(gated)]
         LIMIT[0] = int(opt('--limit', '1'))
         # 길이가 20분을 넘어 기다리던 건이 두 번째 기록을 만나 분석할 수 있게 됐으면 앞에 둔다
         ready = [rid for rid, rec in registry['submissions'].items()
