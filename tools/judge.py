@@ -925,6 +925,23 @@ def lc_score(texts, c):
                 max((sim(t, w) for w in ws), default=0.0)) for t in texts)
 
 
+_PATH_FILE = {'Destruction': 'Warrior', 'Preservation': 'Knight', 'The Hunt': 'Rogue', 'Erudition': 'Mage', 'Harmony': 'Shaman',
+              'Nihility': 'Warlock', 'Abundance': 'Pirest', 'Remembrance': 'Memory', 'Elation': 'Joy'}
+
+
+def header_path(lines):
+    """머리글 줄 가운데 길 이름(모든 언어)인 것이 있으면 그 길의 파일 조각(imgrec.path_of_char 와 같은 꼴), 없으면 None."""
+    for _, _, t in lines[:4]:
+        n = norm(re.split(r'[/／]', t, maxsplit=1)[0]) if ('/' in t or '／' in t) else norm(t)    # 「길 / 이름」 줄은 길 쪽
+        if not n:
+            continue
+        for en, piece in _PATH_FILE.items():
+            for l in LANGS:
+                if any(norm(v) == n for v in (localize(en, l) or [])):
+                    return piece
+    return None
+
+
 def path_words():
     if not PATH_WORDS:
         for en in ['Elation', 'Remembrance', 'Harmony', 'Destruction', 'Preservation', 'Nihility', 'Abundance', 'The Hunt', 'Erudition']:
@@ -1205,6 +1222,19 @@ def judge(rev, build_indices=None):
         fr['header'] = header_name(hl)
         team_en = [c_['char'] for c_ in chars]
         fr['who'] = sorted(((best_vs_team(fr['header'], c['char'], team_en), k) for k, c in enumerate(chars)), reverse=True)
+        # 머리글 윗줄의 길 이름(「Remembrance / Chryro」)이 이름이 어렴풋이 맞은 캐릭터의 길과 다르면 그 캐릭터가 아니다
+        # (플레이어가 지은 개척자 이름 「Chryro」가 「Acheron」과 0.62 로 맞아 개척자 쇼케이스가 Acheron 것으로 잡혔다, rev_7ybbub)
+        hp = header_path(hl)
+        if hp:
+            try:
+                import imgrec
+                fix = []
+                for s_, k_ in fr['who']:
+                    wp = imgrec.path_of_char(en_key(chars[k_]['char']))
+                    fix.append((s_ * 0.5 if (wp and wp != hp and s_ < 0.8) else s_, k_))
+                fr['who'] = sorted(fix, reverse=True)
+            except Exception:
+                pass
         # 머리글이 팀 밖 다른 캐릭터 이름으로 뚜렷이 읽히면(12명 전부를 보여 주는 쇼케이스의 다른 캐릭터 페이지) 우리 캐릭터 것이 아니다
         fr['foreign'] = bool(fr['header']) and fr['who'][0][0] < 0.7 and rival_score(fr['header'], team_en) >= 0.9
         if fr['tab'] == 'LightCone':
