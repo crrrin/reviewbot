@@ -140,6 +140,8 @@ def run_item(rev, item, d):
     # 분석 직전에 최신 제출 정보로 바꾼다(병렬 실행의 분석 프로세스도 여기를 지난다, tools/fresh.py)
     try:
         import fresh
+        if re.search(r'_\d+$', rev):        # 합본 · 같은 영상 건을 기록별로 쪼갠 임시 아이디(rev_xxx_1)는 사이트에 없다
+            raise SystemExit('split sub-item, no refresh')
         cur = fresh.fetch_item(rev)
         if cur is None:
             print(f'{rev}: already decided or gone', flush=True)
@@ -149,7 +151,7 @@ def run_item(rev, item, d):
         item = cur
         fresh.save(rev, item)
     except SystemExit as e:
-        print(f'{rev}: could not refresh the submission ({str(e)[:100]})', flush=True)
+        print(f'{rev}: not refreshed ({str(e)[:100]})', flush=True)
     one = os.path.join(WORK, f'q_{rev}.json')
     json.dump([item], open(one, 'w', encoding='utf8'), ensure_ascii=False)
     env = dict(ENV, HQ_QUEUE=one)
