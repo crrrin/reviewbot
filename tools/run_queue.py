@@ -137,6 +137,19 @@ def send(wh, embed, d, rev):
 def run_item(rev, item, d):
     """한 건을 처음부터 끝까지(받기 → 구간 나누기 → 판정). 판정 결과(dict)를 돌려주고 auto.json 에도 쓴다. 판정이 안 되면 None."""
     os.makedirs(d, exist_ok=True)
+    # 분석 직전에 최신 제출 정보로 바꾼다(병렬 실행의 분석 프로세스도 여기를 지난다, tools/fresh.py)
+    try:
+        import fresh
+        cur = fresh.fetch_item(rev)
+        if cur is None:
+            print(f'{rev}: already decided or gone', flush=True)
+            return None
+        if fresh.fingerprint(cur) != fresh.fingerprint(item):
+            print(f'{rev}: submission changed since the queue was fetched; using the latest', flush=True)
+        item = cur
+        fresh.save(rev, item)
+    except SystemExit as e:
+        print(f'{rev}: could not refresh the submission ({str(e)[:100]})', flush=True)
     one = os.path.join(WORK, f'q_{rev}.json')
     json.dump([item], open(one, 'w', encoding='utf8'), ensure_ascii=False)
     env = dict(ENV, HQ_QUEUE=one)

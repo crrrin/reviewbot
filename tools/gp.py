@@ -89,7 +89,7 @@ def scan(rev, vid=0, model='chinese', fps=4, start=0.0, end=None):
     prev = {}
     for t, f in tabs.frames(video, start, max(0, end - start), fps, W, H):
         nfr += 1
-        band = f[int(0.55 * H):int(0.74 * H), int(0.62 * W):int(0.98 * W)]
+        band = f[int(0.55 * H):int(0.74 * H), int(0.45 * W):int(0.98 * W)]
         top = f[int(0.02 * H):int(0.12 * H), int(0.20 * W):int(0.80 * W)]
         for where, c in (('band', band), ('top', top)):
             if where == 'band':
@@ -152,7 +152,7 @@ def scan(rev, vid=0, model='chinese', fps=4, start=0.0, end=None):
                     if s >= 0.75:
                         hits.append({'t': round(t, 2), 'flag': 'firewall', 'text': txt, 'score': round(s, 2), 'where': 'top'})
     seen = sorted({h['flag'] for h in hits})
-    return {'video': video, 'ocr_model': model, 'band_crop': [0.55, 0.62, 0.74, 0.98], 'start': round(start, 3), 'end': round(end, 1), 'frames': nfr, 'ocr_calls': nocr, 'seen': seen, 'hits': hits[:20]}
+    return {'video': video, 'ocr_model': model, 'band_crop': [0.55, 0.45, 0.74, 0.98], 'start': round(start, 3), 'end': round(end, 1), 'frames': nfr, 'ocr_calls': nocr, 'seen': seen, 'hits': hits[:20]}
 
 
 if __name__ == '__main__':
