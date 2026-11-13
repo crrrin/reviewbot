@@ -234,6 +234,17 @@ def finish(rev, item, d, res, secs, wh):
     send(wh, embed, d, rev)
     if wh and res['confidence'] <= 80:               # 확신도 80 이하는 질문 채널에도
         send('question', embed, d, rev)
+    # 분석하는 동안 제출자가 고쳐 다시 냈으면 이 판정은 옛 제출에 대한 것이다 → 메모 · 결정을 보내지 않는다
+    try:
+        import fresh
+        ch, cur = fresh.changed(rev)
+        if ch:
+            print(f'{rev}: ' + ('already decided or gone' if cur is None else 'submission changed during the analysis')
+                  + ' - note and decision not sent; run it again', flush=True)
+            drop(rev)
+            return
+    except SystemExit:
+        pass
     if still_mine(rev):
         leave_note(rev, item, res)                   # 결정보다 먼저 메모(카드에 판정 · 근거가 남는다)
         approve_if_clear(rev, item, res)
@@ -453,6 +464,19 @@ def main():
         if not take(rev, item):
             continue
         try:
+            # 분석 직전에 최신 제출 정보로 바꾼다(제출자가 그 사이 고쳐 다시 냈을 수 있다, tools/fresh.py)
+            try:
+                import fresh
+                cur = fresh.fetch_item(rev)
+                if cur is None:
+                    print(f'{rev}: skipped (already decided or gone)', flush=True)
+                    continue
+                if fresh.fingerprint(cur) != fresh.fingerprint(item):
+                    print(f'{rev}: submission changed since the queue was fetched; using the latest', flush=True)
+                item = byid[rev] = cur
+                fresh.save(rev, item)
+            except SystemExit as e:
+                print(f'{rev}: could not refresh the submission ({str(e)[:100]}); using the queue copy', flush=True)
             why_skip = gate_reason(rev, item, q, legacy)
             if why_skip:
                 res = write_check(d, rev, item, why_skip)
