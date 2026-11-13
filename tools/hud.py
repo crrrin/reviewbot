@@ -155,7 +155,8 @@ def parse_plight(c, box):
     N 과 x 는 따로 잘라 인식한다. 캐릭터 칸의 행동값(「15」)은 구분선이 없어서 걸리지 않는다. 찾으면 (N, x)."""
     x, y, w, h = [int(v) for v in box[:4]]
     y0, y1 = max(0, int(y - 0.3 * h)), min(c.shape[0], int(y + 1.3 * h))
-    x0, x1 = max(0, int(x - 3.5 * h)), min(c.shape[1], int(x + w + 0.4 * h))
+    # 오른쪽은 숫자 세 자리(「300」)가 들어갈 만큼 넉넉히. 칸 자리(geom)가 한 자리짜리 상자(「3」)에서 잡혔으면 창이 「300」을 잘라 「3」으로 읽는다(rev_1vg0h7v 실제 300 을 3 으로 읽고 거절 오판)
+    x0, x1 = max(0, int(x - 3.5 * h)), min(c.shape[1], int(x + w + 1.6 * h))
     cell = c[y0:y1, x0:x1]
     if cell.size == 0:
         return None
