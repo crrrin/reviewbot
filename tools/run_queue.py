@@ -268,6 +268,46 @@ def finish(rev, item, d, res, secs, wh):
     drop(rev)
 
 
+def _run_sig(item):
+    """(영상 열쇠, 팀 캐릭터 · 성혼 · 광추 · 중첩) — 같은 런을 두 번 낸 건을 알아보는 지문. 합본은 None."""
+    pl = item.get('payload') or {}
+    if pl.get('runs') or item.get('kind') not in (None, 'single'):
+        return None
+    vk = video_key(pl.get('video_url') or '')
+    if not vk:
+        return None
+    team = tuple((pl.get(f'p{i}_char'), pl.get(f'p{i}_eidolon'), pl.get(f'p{i}_lc'), pl.get(f'p{i}_superimp')) for i in range(1, 5))
+    return vk, team
+
+
+def same_run_elsewhere(rev, item):
+    """같은 영상 · 같은 팀의 다른 건 아이디(대기열에 있거나 이미 승인한 것), 없으면 None. 영상 안 런이 하나가 아닐 수 있어 타임스탬프는 따지지 않는다."""
+    sig = _run_sig(item)
+    if not sig:
+        return None
+    try:
+        for x in json.load(open(os.path.join(WORK, 'queue.json'), encoding='utf8')):
+            if x['id'] != rev and _run_sig(x) == sig:
+                return x['id']
+        rp = os.path.join(WORK, 'results.jsonl')
+        for line in open(rp, encoding='utf8'):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if r.get('rev') == rev or r.get('verdict') != 'APPROVE':
+                continue
+            p = os.path.join(RUNS, r['rev'], 'review.json')
+            if os.path.exists(p):
+                y = json.load(open(p, encoding='utf8'))
+                y = {'payload': y.get('payload'), 'kind': 'single'} if 'payload' in y else y
+                if _run_sig(y) == sig:
+                    return r['rev']
+    except (OSError, ValueError, KeyError):
+        pass
+    return None
+
+
 def approve_if_clear(rev, item, res):
     """--approve 일 때만: 승인 판정 · 확신도 90 이상 · 런 하나인 건을 사이트에서 승인한다. 거절은 어떤 경우에도 보내지 않는다."""
     if '--approve' not in sys.argv:
@@ -277,6 +317,11 @@ def approve_if_clear(rev, item, res):
         return
     if not still_mine(rev):
         print(f'{rev}: approve not sent (the review is no longer ours or was already decided)', flush=True)
+        return
+    other = same_run_elsewhere(rev, item)
+    if other:
+        # 같은 영상 · 같은 팀의 기록이 이미 승인됐거나 대기 중이면 같은 런의 중복 제출일 수 있다(rev_1ugsesh / rev_1vty07k 둘 다 승인된 일) → 자동 승인하지 않고 사람이 본다
+        print(f'{rev}: auto-approve skipped (same video and team as {other}; possible duplicate)', flush=True)
         return
     out = sh([os.path.join(HERE, 'mod_api.py'), 'decide', rev, 'approve', '--yes'])
     ok = out.returncode == 0
