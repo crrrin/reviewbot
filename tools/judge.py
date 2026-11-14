@@ -146,6 +146,9 @@ def best(text, en):
 
 
 _rival_cache = {}
+# 아바타 그림 자료에 아직 없는 캐릭터(Fate 협업 등). 쇼케이스가 이들 페이지도 보여 주면(rev_1utnn2a: Archer 페이지가 Acheron 으로 읽힘)
+# 팀 밖 캐릭터로 알아봐야 한다. 새 캐릭터가 제출에 나오면 여기에 더한다.
+EXTRA_RIVALS = ['Archer', 'Rin Tohsaka', 'Gilgamesh', 'Saber', 'March 7th (Hunt)']
 
 
 def rival_score(text, team_en):
@@ -156,7 +159,7 @@ def rival_score(text, team_en):
     if key not in _rival_cache:
         mine = {en_key(c) for c in team_en} | set(team_en)
         top = 0.0
-        for name in imgrec.avatar_ids():
+        for name in list(imgrec.avatar_ids()) + EXTRA_RIVALS:
             if name in mine or name.startswith('Trailblazer'):
                 continue
             top = max(top, best(text, name)[0])
@@ -1473,6 +1476,12 @@ def judge(rev, build_indices=None):
         firsts = [f1 for f1 in eis[:i] if f1['char_k'] == f2['char_k']]
         if not firsts or f2['locks'] is None or firsts[0]['locks'] is None or f2['locks'] == firsts[0]['locks']:
             continue
+        # 성혼 화면 바로 앞뒤의 부서지는 연출 프레임은 머리글이 없고 노드가 잠금 없이 보여 자물쇠 수가 다르게 읽힌다. 그 프레임이 「details 로 이음」
+        # 같은 추정으로 이 캐릭터에 붙었을 뿐인데 머리글이 또렷한 뒤 프레임을 남에게 넘기면 틀린다
+        # (rev_1rafwck: 은랑 화면이 개척자로, rev_k2s5dx: Firefly 화면이 Fugue 로). 앞 프레임이 자기 머리글 이름으로 정해진 경우에만 인정하고,
+        # 뒤 프레임이 자기 머리글 이름으로 정해진 경우는 넘기지 않는다.
+        if not str(firsts[0].get('how', '')).startswith('name ') or not firsts[0].get('header') or str(f2.get('how', '')).startswith('name '):
+            continue
         have = {f['char_k'] for f in eis if f is not f2}
         rest = [k for k in range(len(chars)) if k not in have]
         pick = rest[0] if len(rest) == 1 else (tb[0] if tb and tb[0] in rest else None)
@@ -1521,6 +1530,12 @@ def judge(rev, build_indices=None):
             if seen:
                 fr['path_icon'] = want_path[k] if want_path[k] in seen else seen[-1]
                 fr['path_conflict'] = want_path[k] not in seen and len(seen) >= 2
+                # 자기 머리글 이름 · 광추 제목 · 성혼 이름이 아니라 「앞 광추 뒤」 「details 로 이음」 같은 추정으로 붙은 프레임이 길마저 다르면
+                # 그 캐릭터의 페이지가 아니다(쇼케이스를 여러 런이 나눠 쓰는 영상에서 옆 런 캐릭터의 부서지는 연출 프레임 — 경고 44건 중 거의 전부).
+                # 경고로 남기지 말고 이 캐릭터의 근거에서 뺀다
+                if fr['path_conflict'] and not str(fr.get('how', '')).startswith(('name ', 'lc title', 'eidolon names')):
+                    fr['char_k'], fr['how'] = None, 'path icon differs (another character\'s page)'
+                    fr['path_conflict'] = False
     except Exception:
         pass
     # 정한 근거와 따로 맞는 다른 근거가 있으면 적어 둔다(머리글 · 광추 제목 · 성혼 이름). 둘이 맞으면 확실하다

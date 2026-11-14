@@ -329,6 +329,14 @@ def approve_if_clear(rev, item, res):
     if not ok:
         with open(os.path.join(WORK, 'approve_failed.txt'), 'a', encoding='utf8') as f:
             f.write(rev + '\n')
+    else:
+        # 승인으로 끝난 건의 영상은 더 볼 일이 없다 — 지운다(CHECK · 거절은 눈으로 다시 보려고 남긴다)
+        import glob
+        for v in glob.glob(os.path.join(RUNS, rev, 'video*.mp4')):
+            try:
+                os.remove(v)
+            except OSError:
+                pass
 
 
 def source_key(item, rev):
