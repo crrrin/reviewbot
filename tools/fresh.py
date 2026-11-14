@@ -38,6 +38,8 @@ def _path(rev):
 def save(rev, item):
     os.makedirs(os.path.join(RUNS, rev), exist_ok=True)
     open(_path(rev), 'w').write(fingerprint(item))
+    if item.get('updated_at'):          # 메모 · 결정에 review_updated_at 으로 싣는다(mod_api._post_checked)
+        open(os.path.join(RUNS, rev, 'updated_at.txt'), 'w').write(str(item['updated_at']))
 
 
 def changed(rev):

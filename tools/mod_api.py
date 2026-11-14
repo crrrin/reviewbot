@@ -6,6 +6,8 @@
   "bot_key": "tga_bot_..."
 를 넣거나 환경 변수 THEHERTA_BOT_KEY 로 준다(환경 변수가 먼저). 만료 · refresh 가 없다. 키는 어디에도 출력하지 않는다.
   봇 키로는 대기 중 검토만 보이고, 결정을 되돌릴 수 없다(pending 없음). 합쳐 낸 검토도 보인다(kind single|dual|multi|merge).
+  메모 · 결정에는 분석한 때의 updated_at 을 review_updated_at 으로 싣는다(runs/<rev>/updated_at.txt, 없으면 work/queue.json). 409 면 건을 다시 받아
+  제출 내용이 그대로일 때만 새 값으로 한 번 다시 보내고, 바뀌었거나 사라졌으면 Stale 로 멈춘다(다시 분석).
 
 [세션 토큰] config.json 에 mod_token · mod_refresh_token · supabase_url · supabase_anon_key (README 「토큰 얻기」).
 
@@ -17,7 +19,7 @@ python mod_api.py decide <rev_id> approve --yes
 python mod_api.py decide <rev_id> reject "사유" --yes  승인 · 거절(--yes 없으면 보내지 않고 보낼 내용만 보인다)"""
 import os, sys, json, time, urllib.request, urllib.error
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import CONFIG, WORK, config   # noqa: E402
+from paths import CONFIG, WORK, RUNS, config   # noqa: E402
 
 BASE = os.environ.get('THEHERTA_BASE', 'https://theherta.com')
 
@@ -43,6 +45,14 @@ def refresh(cfg):
     cfg['mod_token_expires_at'] = int(time.time()) + int(r.get('expires_in', 3600))
     _save_cfg(cfg)
     return cfg
+
+
+class Conflict(SystemExit):
+    """HTTP 409: 보낸 review_updated_at 이 사이트의 최신과 다르다(그동안 건이 바뀜)."""
+
+
+class Stale(SystemExit):
+    """409 뒤에 건을 다시 받아 보니 제출 내용이 바뀌었거나 이미 결정되어 사라졌다. 보내지 말고 다시 분석해야 한다."""
 
 
 def _request(method, path, body, tok):
@@ -78,7 +88,8 @@ def call(method, path, body=None, _retry=True):
         try:
             return _request(method, path, body, key)
         except urllib.error.HTTPError as e:
-            raise SystemExit(f'{method} {path} -> HTTP {e.code}: {e.read()[:300]!r}')
+            msg = f'{method} {path} -> HTTP {e.code}: {e.read()[:300]!r}'
+            raise (Conflict(msg) if e.code == 409 else SystemExit(msg))
     cfg = config()
     tok = os.environ.get('THEHERTA_TOKEN') or cfg.get('mod_token')
     if not tok:
@@ -128,6 +139,60 @@ def release(rev):
     return call('DELETE', f'{_prefix()}/reviews/{rev}/claim')
 
 
+_UPDATED = {}        # 이 프로세스에서 알게 된 건별 최신 updated_at(메모를 보내면 바뀔 수 있어 응답 · 재조회로 갱신)
+
+
+def _known_updated(rev):
+    """분석한 때의 updated_at(runs/<rev>/updated_at.txt, fresh.save 가 적음) → 없으면 work/queue.json 에 받아 둔 값."""
+    if rev in _UPDATED:
+        return _UPDATED[rev]
+    try:
+        v = open(os.path.join(RUNS, rev, 'updated_at.txt')).read().strip()
+        if v:
+            return v
+    except OSError:
+        pass
+    try:
+        for x in json.load(open(os.path.join(WORK, 'queue.json'), encoding='utf8')):
+            if x.get('id') == rev:
+                return x.get('updated_at')
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _post_checked(rev, path, body):
+    """review_updated_at 을 실어 보낸다. 409 면 건을 다시 받아, 제출 내용이 그대로일 때만(내 메모 · 검토 중 표시로 updated_at 만 바뀐 경우)
+    새 값으로 한 번 다시 보낸다. 내용이 바뀌었거나 사라졌으면 Stale(보내지 않음)."""
+    import fresh
+    ua = _known_updated(rev)
+    if ua:
+        body = dict(body, review_updated_at=ua)
+    try:
+        r = call('POST', path, body)
+    except Conflict:
+        cur = fresh.fetch_item(rev)
+        if cur is None:
+            raise Stale(f'{rev}: already decided or gone (409)')
+        try:
+            old = open(os.path.join(RUNS, rev, 'fingerprint.txt')).read().strip()
+        except OSError:
+            old = None
+        if old and fresh.fingerprint(cur) != old:
+            raise Stale(f'{rev}: submission changed since it was analysed (409) - re-run it')
+        _UPDATED[rev] = cur.get('updated_at')
+        try:
+            r = call('POST', path, dict(body, review_updated_at=cur.get('updated_at')))
+        except Conflict:
+            raise Stale(f'{rev}: still 409 after re-fetch - re-run it')
+    nu = (r or {}).get('review_updated_at') or (r or {}).get('updated_at') if isinstance(r, dict) else None
+    if nu:
+        _UPDATED[rev] = nu
+    else:
+        _UPDATED.pop(rev, None)           # 다음 보냄은 409 → 재조회 길로 새 값을 얻는다
+    return r
+
+
 def note(rev, verdict, confidence=None, summary=None, reasons=None, evidence=None):
     """봇 메모(카드에는 가장 새 것 하나만 보인다). 판정이 끝날 때 한 번만 보낸다."""
     if verdict not in ('approve', 'reject', 'check'):
@@ -141,13 +206,15 @@ def note(rev, verdict, confidence=None, summary=None, reasons=None, evidence=Non
         body['reasons'] = [r[:500] for r in reasons if r][:50]
     if evidence:
         body['evidence'] = evidence[:50]
-    return call('POST', f'/api/bot/reviews/{rev}/notes', body)
+    return _post_checked(rev, f'/api/bot/reviews/{rev}/notes', body)
 
 
 def decide(rev, action, reason=None):
     body = {'action': action}
     if action == 'reject':
         body['reason'] = reason
+    if bot_key():
+        return _post_checked(rev, f'/api/bot/reviews/{rev}/decision', body)
     return call('POST', f'{_prefix()}/reviews/{rev}/decision', body)
 
 
