@@ -6,6 +6,7 @@
   "bot_key": "tga_bot_..."
 를 넣거나 환경 변수 THEHERTA_BOT_KEY 로 준다(환경 변수가 먼저). 만료 · refresh 가 없다. 키는 어디에도 출력하지 않는다.
   봇 키로는 대기 중 검토만 보이고, 결정을 되돌릴 수 없다(pending 없음). 합쳐 낸 검토도 보인다(kind single|dual|multi|merge).
+  [기본 꺼짐: config.json 의 "review_updated_at": true 또는 환경 변수 THEHERTA_REVIEW_UPDATED_AT=1 로 켠다 — 사이트가 큐 값에도 409 를 내서 확인 중]
   메모 · 결정에는 분석한 때의 updated_at 을 review_updated_at 으로 싣는다(runs/<rev>/updated_at.txt, 없으면 work/queue.json). 409 면 건을 다시 받아
   제출 내용이 그대로일 때만 새 값으로 한 번 다시 보내고, 바뀌었거나 사라졌으면 Stale 로 멈춘다(다시 분석).
 
@@ -164,6 +165,8 @@ def _known_updated(rev):
 def _post_checked(rev, path, body):
     """review_updated_at 을 실어 보낸다. 409 면 건을 다시 받아, 제출 내용이 그대로일 때만(내 메모 · 검토 중 표시로 updated_at 만 바뀐 경우)
     새 값으로 한 번 다시 보낸다. 내용이 바뀌었거나 사라졌으면 Stale(보내지 않음)."""
+    if not (os.environ.get('THEHERTA_REVIEW_UPDATED_AT') or config().get('review_updated_at')):
+        return call('POST', path, body)       # 꺼 둠(기본): 2026-11-15 현재 사이트가 큐의 updated_at 을 그대로 보내도 409 를 낸다
     import fresh
     ua = _known_updated(rev)
     if ua:
