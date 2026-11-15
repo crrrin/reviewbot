@@ -98,7 +98,14 @@ def norm(s):
     s = unicodedata.normalize('NFKD', str(s)).lower()
     s = unicodedata.normalize('NFC', ''.join(c for c in s if not unicodedata.combining(c)))
     s = s.replace('đ', 'd')
-    return re.sub(r'[^0-9a-z\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f\u0400-\u04ff]+', '', s)
+    s = re.sub(r'[^0-9a-z\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f\u0400-\u04ff]+', '', s)
+    if re.search(r'[゠-ヿ]', s):
+        # 가타카나 글에서 OCR 이 모양 같은 한자로 읽는 글자(「星神★ア八」 「パ一」, rev_aa3ite) — 중국어 글에는 가타카나가 없다
+        s = s.translate(_KANA_LOOKALIKE)
+    return s
+
+
+_KANA_LOOKALIKE = str.maketrans({'八': 'ハ', '一': 'ー', '口': 'ロ', '力': 'カ', '工': 'エ', '夕': 'タ', '卜': 'ト'})
 
 
 def sim(a, b):
@@ -815,6 +822,11 @@ def header_name(lines):
     for t in texts:
         if '/' in t or '／' in t:
             return re.split(r'[/／]', t, maxsplit=1)[1]
+    # 「/」를 못 읽으면 앞의 길 이름(「愉悦パ一」의 「愉悦」)을 뗀다
+    joined = norm(' '.join(texts))
+    for pw in sorted(path_words(), key=len, reverse=True):
+        if pw and joined.startswith(pw) and len(joined) > len(pw) + 1:
+            return joined[len(pw):]
     return ' '.join(texts)
 
 

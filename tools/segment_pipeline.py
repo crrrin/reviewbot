@@ -203,6 +203,9 @@ def associate(segments, showcases, index):
         )
         candidates.append(region)
     count = len(segments)
+    if not candidates:
+        # 영상 어디에도 캐릭터 화면이 없다(rev_jqkxcp · rev_kdnsim: 전투 · 결과 화면으로 끝남) → 성혼 · 광추 미표시(템플릿 2 · 3) 후보
+        raise ValueError('No showcase anywhere in the video: Eidolons and Light Cone Superimposition not shown (templates 2, 3); verify by eye')
     if count == 1 and len(candidates) == 1:
         return candidates[0], False
     # One terminal/prelude showcase with no interspersed showcases.
@@ -399,6 +402,11 @@ def manifest(video, preferred, payload=None, language_video=None):
         if complete:
             chosen = output
             break
+        # 확신한 모델로 배너를 하나도 못 읽었으면(events 0) UI 언어가 다른 것이다 — 광추 이름은 영어인데 UI 는 태국어인 영상(rev_1ggwrd).
+        # 그때만 다른 모델도 훑는다(모델마다 몇 분씩 걸리므로 하나라도 읽힌 경우에는 하지 않는다)
+        if len(models) == 1 and not data.get('events'):
+            print(f'No banner read with {model}; trying the other models', flush=True)
+            models += [m for m in ('thai', 'chinese', 'korean', 'eslav', 'latin') if m not in models]
     if chosen is None:
         raise ValueError('No complete battle segmentation found; manual review required (see work/video_cache/segments)')
     scoped, timeline = showcase_scan_input(data, complete, unresolved)

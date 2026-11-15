@@ -8,6 +8,7 @@ D = os.path.join(os.environ.get('HSR_TEXTMAP') or os.path.join(HERE, '..', 'data
 CACHE = os.path.join(HERE, 'names_cache.json')
 _cache = json.load(open(CACHE, encoding='utf8')) if os.path.exists(CACHE) else {}
 _maps = {}
+_rechecked = set()
 clean = lambda s: re.sub(r'<[^>]+>|\{RUBY_[BE]#[^}]*\}', '', str(s or '')).replace('\u00a0', ' ').strip()
 
 
@@ -24,8 +25,11 @@ def _load(l):
 def localize(name, lang):
     """같은 EN 글을 가진 모든 해시의 그 언어 글(중복 없이). 못 찾으면 []."""
     key = f'{lang}|{name}'
-    if key in _cache:
+    # 빈 결과는 TextMap 이 새 판으로 바뀌기 전에 적힌 것일 수 있다(「Aeon ★ Aha」가 [] 로 남아 일본어 머리글을 못 맞췄다, rev_aa3ite)
+    # → 프로세스마다 한 번은 다시 찾는다
+    if key in _cache and (_cache[key] or key in _rechecked):
         return _cache[key]
+    _rechecked.add(key)
     alt = {'Trailblazer (Elation)': 'Trailblazer', 'Trailblazer (Remembrance)': 'Trailblazer', 'Trailblazer (Harmony)': 'Trailblazer',
            'Trailblazer (Destruction)': 'Trailblazer', 'Trailblazer (Preservation)': 'Trailblazer'}
     en = _load('EN')
