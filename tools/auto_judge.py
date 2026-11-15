@@ -678,12 +678,20 @@ def run(rev, do_gp=True, reuse=False):
             ah = aha_gp.scan(vpath, a0, a1)
             cache['aha'] = dict(ah, version=aha_gp.VERSION)
         ah = cache['aha']
-        out['gp']['aha'] = {'present': ah['present'], 'hits': len(ah['hits']), 'frames': ah['frames'],
-                            'first': ah['hits'][0][0] if ah['hits'] else None, 'kind': ah['hits'][0][1] if ah['hits'] else None}
-        if ah['present'] and not aha_flags:
-            prob('Global Passive missing: Aeon ★ Aha', 'gp_missing', who='aha', t=ah['hits'][0][0])
-        elif aha_flags and not in_team and not ah['present']:
-            out['check_reasons'].append(f"Aha Global Passive ({', '.join(aha_flags)}) submitted, but the Elation heart icon was not found in {ah['frames']} battle frames")
+        turns = ah.get('turns') or []
+        out['gp']['aha'] = {'present': ah['present'], 'hits': len(ah['hits']), 'frames': ah['frames'], 'turns': len(turns),
+                            'first': turns[0]['start'] if turns else None, 'kind': ah['hits'][0][1] if ah['hits'] else None}
+        # 규칙(사용자, 2026-11-15): Aeon ★ Aha 가 편성에 있으면 보유 효과는 언제나 켜져 있다 → 플래그가 없으면 누락.
+        # 편성에 없으면 하트(장착)만으로는 안 되고 아하 타임(행동 순서 맨 위에 아하)이 실제로 와야 쓴 것이다
+        if in_team and not aha_flags:
+            prob('Global Passive missing: Aeon ★ Aha', 'gp_missing', who='aha', t=turns[0]['start'] if turns else None)
+        elif not in_team and turns and not aha_flags:
+            prob('Global Passive missing: Aeon ★ Aha', 'gp_missing', who='aha', t=turns[0]['start'])
+        elif not in_team and aha_flags and not turns:
+            if ah['present']:
+                prob('Global Passive not triggered: Aeon ★ Aha', 'gp_not_triggered', who='aha')
+            else:
+                out['check_reasons'].append(f"Aha Global Passive ({', '.join(aha_flags)}) submitted, but neither the Elation heart icon nor an Aha turn was found in the battle")
         for f in sorted((flags & {'revive', 'firewall'}) - seen):
             if f == 'revive':
                 # 카스토리스: 제출에 있는데 배너를 못 찾으면, 실제로 안 썼든 도구가 놓쳤든 사람이 본다(사용자, 2026-10-08)

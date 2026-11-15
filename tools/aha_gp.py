@@ -14,7 +14,10 @@ import cv2
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = 1
+VERSION = 3
+TURN_STEP = 0.33      # 아하 타임은 맨 위 칸에 1초 남짓 머문다
+TURN_THRESH = 0.76    # 아하 타임 0.82~0.84, 아닌 때 0.69 이하(WarNfx8RjWs 139 · 384 · 627초)
+TURN_SURE = 0.80
 THRESH = 0.75         # 하트 있음 0.81~0.91, 없음 0.38~0.45(rev_as8f4x · c1tmz8 · mbzfb4 · zq6u9b / z47x8e · 11axy74)
 MIN_HITS = 3
 _tpl = None
@@ -59,24 +62,78 @@ def match(f):
     return best
 
 
-def scan(video, start, end, step=None, max_frames=80):
+_turn = None
+
+
+def turn_templates():
+    """아하 타임에 행동 순서 맨 위(지금 행동하는 칸)에 올라온 아하 얼굴. 환락 캐릭터가 없는 팀(aha_turn_plain.png, 청록 칸)과
+    있는 팀(aha_turn_elation.png, 붉은 체크 칸 + 카드)의 모양이 다르다(사용자 갈무리, 720p 크기)."""
+    global _turn
+    if _turn is None:
+        _turn = []
+        for kind in ('plain', 'elation', 'elation2'):
+            im = cv2.imread(os.path.join(HERE, f'aha_turn_{kind}.png'))
+            for s in (0.8, 0.9, 1.0, 1.1, 1.2):
+                _turn.append((kind, cv2.resize(im, None, fx=s, fy=s)))
+    return _turn
+
+
+def turn_score(f):
+    """맨 위 칸이 아하인지(점수, 종류). 720p 로 맞춰 왼쪽 위 칸만 본다."""
+    H, W = f.shape[:2]
+    g = cv2.resize(f, (int(round(W * 720.0 / H)), 720)) if H != 720 else f
+    roi = g[20:110, 0:300]      # 좌우 검은 띠로 게임이 밀린 영상(rev_58ddxb, +70px)도
+    return max((float(cv2.matchTemplate(roi, tp, cv2.TM_CCOEFF_NORMED).max()), k) for k, tp in turn_templates())
+
+
+def scan(video, start, end, step=None, max_frames=80, turn_step=TURN_STEP):
+    """전투 구간을 한 번 차례로 읽으며 ① 웃음 포인트 하트(보유 효과 장착)를 max_frames 장쯤, ② 맨 위 칸 아하(아하 타임 = 실제 발동)를
+    turn_step 초마다 본다. 하트가 보여도 아하 타임이 한 번도 안 왔으면 보유 효과를 쓴 것이 아니다(사용자, 2026-11-15)."""
     cap = cv2.VideoCapture(video)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     dur = max(0.0, end - start)
     step = step or max(2.0, dur / max_frames)
-    hits, n, t = [], 0, start + 1.0
+    hits, turns, n = [], [], 0
+    cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, start) * 1000)
+    t, next_heart, next_turn = max(0.0, start), start + 1.0, start
+    every = max(1, int(round(fps * turn_step)))
+    k = 0
     while t < end:
-        cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
-        ok, f = cap.read()
-        if ok:
+        if not cap.grab():
+            break
+        t = (cap.get(cv2.CAP_PROP_POS_MSEC) or 0) / 1000.0
+        k += 1
+        if t < next_turn and t < next_heart:
+            continue
+        ok, f = cap.retrieve()
+        if not ok:
+            continue
+        if t >= next_turn:
+            next_turn = t + turn_step
+            v, kind = turn_score(f)
+            if v >= TURN_THRESH:
+                turns.append((round(t, 2), kind, round(v, 3)))
+        if t >= next_heart:
+            next_heart = t + step
             n += 1
             v, kind, where = match(f)
             if v >= THRESH:
                 hits.append((round(t, 1), kind, round(v, 3), where))
-        t += step
     cap.release()
-    return {'present': len(hits) >= MIN_HITS, 'hits': hits, 'frames': n}
+    # 아하 타임: 맨 위 칸이 아하인 읽기가 2초 안에 두 번 이상이거나, 한 번이라도 아주 또렷하면 한 번으로 센다
+    events = []
+    for tt, kind, v in turns:
+        if events and tt - events[-1]['end'] <= 2.0:
+            events[-1]['end'] = tt
+            events[-1]['n'] += 1
+            events[-1]['best'] = max(events[-1]['best'], v)
+        else:
+            events.append({'start': tt, 'end': tt, 'n': 1, 'best': v, 'kind': kind})
+    events = [e for e in events if e['n'] >= 2 or e['best'] >= TURN_SURE]
+    return {'present': len(hits) >= MIN_HITS, 'hits': hits, 'frames': n, 'turns': events}
 
 
 if __name__ == '__main__':
     r = scan(sys.argv[1], float(sys.argv[2]), float(sys.argv[3]))
-    print(r['present'], r['frames'], len(r['hits']), r['hits'][:12])
+    print('heart', r['present'], r['frames'], len(r['hits']), r['hits'][:6])
+    print('aha turns', r['turns'])

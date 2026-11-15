@@ -208,12 +208,17 @@ def gp_lines(g, video_url='', rev=None, local_url=None):
     aha_flags = sorted(f for f in flags if f.startswith('aha'))
     if aha.get('present') or aha_flags:
         name = 'Aeon ★ Aha' + (f" ({', '.join(aha_flags)})" if aha_flags else '')
-        if aha.get('present') and aha_flags:
-            out.append(f'{ROW_MARK[OK]} {name}')
-        elif aha.get('present'):
-            out.append(f'{ROW_MARK[BAD]} {name} **not submitted**')
+        used = (aha.get('turns') or 0) > 0
+        if used and aha_flags:
+            out.append(f"{ROW_MARK[OK]} {name} · Aha turns {aha['turns']}")
+        elif used:
+            out.append(f"{ROW_MARK[BAD]} {name} **not submitted** · Aha turns {aha['turns']}")
+        elif aha_flags and aha.get('present'):
+            out.append(f'{ROW_MARK[BAD]} {name} heart shown but **no Aha turn**')
+        elif aha_flags:
+            out.append(f'{ROW_MARK[UNSURE]} {name} heart icon / Aha turn **not found**')
         else:
-            out.append(f'{ROW_MARK[UNSURE]} {name} heart icon **not found**')
+            out.append(f'{ROW_MARK[OK]} {name} heart shown, no Aha turn (not used)')
         if aha.get('first') is not None:
             out[-1] += f" (first at {int(aha['first'])}s)"
 
