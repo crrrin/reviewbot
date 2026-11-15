@@ -973,6 +973,56 @@ def ei_names(en):
             or _ei_names.get(norm(base), set()))
 
 
+_segs_cache = {}
+
+
+def header_sweep(fr, frames, rev, vids, d, model, chars, team_en):
+    """저장 프레임 한 장의 머리글(「Eidolon Resonance / 캐릭터」)이 흐리거나 연출 중이라 이름이 안 맞으면,
+    같은 탭 구간을 0.25초마다 다시 읽는다(앞뒤 저장 프레임은 넘지 않음). 또렷한 읽기(0.8 이상, 둘째와 0.3 차)가
+    모두 한 캐릭터를 가리키면 그 이름을 이 프레임의 머리글로 쓴다. 두 캐릭터가 섞이면(탭을 연 채 캐릭터를 넘김)
+    정하지 않는다. 팀 밖 캐릭터 이름만 또렷하면 다른 캐릭터 페이지로 본다(rev_k2s5dx 에서 눈으로 쓴 방법)."""
+    import tabs
+    vi = fr['vid']
+    if vi not in _segs_cache:
+        p_tl = os.path.join(d, f'tabs{vi}', 'timeline.txt')
+        _segs_cache[vi] = segs_of(rev, vi) if os.path.exists(p_tl) else []
+    a, b = seg_at(_segs_cache[vi], fr['t'], fr['tab'])
+    ts = sorted(g['t'] for g in frames if g['vid'] == vi and g is not fr)
+    a = max([a, fr['t'] - 1.5] + [t + 0.05 for t in ts if t < fr['t']])
+    b = min([b, fr['t'] + 1.5] + [t - 0.05 for t in ts if t > fr['t']])
+    if b - a < 0.1:
+        return
+    video = os.path.join(d, vids[vi].get('file', f'video{vi}.mp4'))
+    try:
+        _, W, H = tabs.probe(video)
+        got = list(tabs.frames(video, max(0, a), b - a, 4, W, H))
+    except Exception:
+        return
+    mine, foreign = {}, 0
+    for t, g in got:
+        txt = header_name(read_lines(header_crop(g, fr['lay']), [model])[model])
+        if not txt:
+            continue
+        sc = sorted(((best_vs_team(txt, c['char'], team_en), k) for k, c in enumerate(chars)), reverse=True)
+        s0, k0 = sc[0]
+        s1 = sc[1][0] if len(sc) > 1 else 0.0
+        if s0 >= 0.8 and s0 - s1 >= 0.3:
+            mine.setdefault(k0, []).append((s0, round(t, 2), txt))
+        elif s0 < 0.7 and rival_score(txt, team_en) >= 0.9:
+            foreign += 1
+    if len(mine) == 1 and not foreign:
+        k, hits = next(iter(mine.items()))
+        s, t, txt = max(hits)
+        fr['header'] = txt
+        fr['who'] = [(s, k)] + [(min(z[0], 0.3), z[1]) for z in fr['who'] if z[1] != k]
+        fr['sweep_note'] = f' (header sweep {len(hits)}/{len(got)} at {t})'
+    elif not mine and foreign >= 2:
+        fr['foreign'] = True
+        fr['sweep_note'] = f' (header sweep: other character {foreign}/{len(got)})'
+    elif len(mine) > 1:
+        fr['sweep_note'] = ' (header sweep: ' + ', '.join(chars[k]['char'] for k in mine) + ' mixed)'
+
+
 def ei_who(f, lay, chars, model):
     """성혼 화면에 보이는 성혼 이름 줄이 누구 것인지. 머리글이 워터마크에 덮여도 성혼 이름은 캐릭터마다 다르다.
     [(맞은 줄 수, k)] 큰 것부터."""
@@ -1240,6 +1290,8 @@ def judge(rev, build_indices=None):
                 pass
         # 머리글이 팀 밖 다른 캐릭터 이름으로 뚜렷이 읽히면(12명 전부를 보여 주는 쇼케이스의 다른 캐릭터 페이지) 우리 캐릭터 것이 아니다
         fr['foreign'] = bool(fr['header']) and fr['who'][0][0] < 0.7 and rival_score(fr['header'], team_en) >= 0.9
+        if lay and not fr['foreign'] and fr['who'][0][0] < 0.7:
+            header_sweep(fr, frames, rev, vids, d, model, chars, team_en)
         if fr['tab'] == 'LightCone':
             pl = read_lines(panel_crop(f), [model])[model]
             # 일본어 제목 위의 후리가나(「ながよる」 「かがや」 「ほし」)는 줄로 따로 잡혀 제목을 밀어낸다 → 짧은 히라가나만의 줄은 뺀다(rev_13uh4f6)
@@ -1381,14 +1433,14 @@ def judge(rev, build_indices=None):
     used = set()
     for fr in lcf:
         if fr.get('foreign'):
-            fr['char_k'], fr['how'] = None, 'other character page'
+            fr['char_k'], fr['how'] = None, 'other character page' + fr.get('sweep_note', '')
             continue
         s0, k0 = fr['who'][0]
         s1 = fr['who'][1][0] if len(fr['who']) > 1 else 0.0
         ls = fr['lc_scores']
         dt = fr.get('details')
         if s0 >= 0.7 or (s0 >= 0.6 and s0 - s1 >= 0.3):
-            fr['char_k'], fr['how'] = k0, f'name {s0:.2f}'
+            fr['char_k'], fr['how'] = k0, f'name {s0:.2f}' + fr.get('sweep_note', '')
         elif ls and ls[0][0] >= 0.9 and (len(ls) < 2 or ls[1][0] < ls[0][0] - 0.25):
             # 광추 제목이 한 캐릭터의 제출 광추와만 뚜렷이 맞으면 디테일 화면보다 앞선다
             # (광추 탭에 머문 채 캐릭터 줄로 넘기면 「디테일 뒤 첫 광추」가 다음 캐릭터 것이 된다)
@@ -1441,12 +1493,12 @@ def judge(rev, build_indices=None):
             f['char_k'], f['how'] = k, 'lc title tie, paired by order'
     for fr in sorted([f for f in frames if f['tab'] == 'Eidolon'], key=lambda f: (f['vid'], f['t'])):
         if fr.get('foreign'):
-            fr['char_k'], fr['how'] = None, 'other character page'
+            fr['char_k'], fr['how'] = None, 'other character page' + fr.get('sweep_note', '')
             continue
         s0, k0 = fr['who'][0]
         s1 = fr['who'][1][0] if len(fr['who']) > 1 else 0.0
         if s0 >= 0.7 or (s0 >= 0.6 and s0 - s1 >= 0.3):
-            fr['char_k'], fr['how'] = k0, f'name {s0:.2f}'
+            fr['char_k'], fr['how'] = k0, f'name {s0:.2f}' + fr.get('sweep_note', '')
             continue
         ew = fr.get('ei_who') or []
         # 둘째 캐릭터가 한두 줄 걸리는 일이 있다(설명문 낱말) → 첫째의 1/3 이하면 첫째로
