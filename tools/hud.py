@@ -216,7 +216,8 @@ def read_plight_slide(f, geom):
     """칸 자리를 아는 뒤에는 OCR 상자 없이 같은 크기 창을 줄 위아래로 밀어 본다(글자 찾기가 칸을 자주 놓친다)."""
     c = plight_col(f)
     x, w, h = geom
-    for y in range(0, max(1, c.shape[0] - h), max(1, h // 3)):
+    # 간격이 크면 칸을 건너뛴다(rev_1i4511j: y=941 에서만 읽히는데 12px 간격이 936 · 948 만 봐서 마지막 값 1 | 69 를 놓쳤다)
+    for y in range(0, max(1, c.shape[0] - h), max(1, h // 8)):
         p = parse_plight(c, (x, y, w, h))
         if p:
             return p
