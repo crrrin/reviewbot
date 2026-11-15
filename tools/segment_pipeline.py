@@ -331,6 +331,25 @@ def early_language(video, payload, cache_root):
     return result
 
 
+def hud_end(output, data):
+    """전투가 하나뿐인데 끝 배너를 못 읽은 영상(rev_mbzfb4: HUD 는 518초까지, 영상 605초, 「Battle end not detected」).
+    HUD 가 마지막으로 보인 뒤 10초 넘게 영상이 이어지면 그 시각을 끝으로 둔다(end_from_hud — prepare 가 CHECK 사유를 단다).
+    전투가 둘 이상이거나 끝 없는 조각이 여럿이면 건드리지 않는다."""
+    segs = data.get('segments') or []
+    if len(segs) != 1 or segs[0].get('start') is None or segs[0].get('end') is not None:
+        return
+    if segs[0].get('warnings') != ['Battle end not detected']:
+        return
+    try:
+        samples = json.loads((Path(output) / 'hud_samples.json').read_text(encoding='utf8'))
+    except (OSError, ValueError):
+        return
+    seen = [s['t'] for s in samples if s.get('present') and s['t'] >= segs[0]['start']]
+    if not seen or data['range'][1] - max(seen) < 10 or max(seen) - segs[0]['start'] < 60:
+        return
+    segs[0].update(end=max(seen) + 0.5, status='candidate', warnings=[], end_from_hud=True)
+
+
 def manifest(video, preferred, payload=None, language_video=None):
     import video_cache
     video = Path(video)
@@ -372,6 +391,7 @@ def manifest(video, preferred, payload=None, language_video=None):
             else:
                 run_script('scan_battle_boundaries.py', [video, '--model', model, '--repair-limit', '60', '--output', output])
             data = json.loads(boundary_path.read_text(encoding='utf8'))
+            hud_end(output, data)
             complete, unresolved = partition_battles(data)
         except (OSError, ValueError, RuntimeError) as error:
             print(str(error), flush=True)
@@ -459,6 +479,8 @@ def prepare(directory, payload, videos):
         battle, anchor, data.get('unresolved_intervals', [])
     )
     reasons = list(battle.get('warnings') or []) + timing_reasons
+    if battle.get('end_from_hud'):
+        reasons.append('Battle end not read: the battle HUD was last seen at %.1fs; verify the end time and the cycle count' % (battle['end'] - 0.5))
     if battle.get('end_inferred'):
         reasons.append('Battle end inferred from the result screen, not a Battle Over banner; verify the end time')
     if battle.get('start_inferred') and battle.get('start', 0) > 0:

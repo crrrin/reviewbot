@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from paths import ROOT, RUNS, WORK, YT, FF, config   # noqa: E402
 import video_cache
 import video_policy
+import viewport
 from pathlib import Path
 import shutil
 import tempfile
@@ -220,6 +221,15 @@ for rid in sys.argv[1:]:
                     with tempfile.TemporaryDirectory() as temporary:
                         shutil.copy2(v, Path(temporary) / 'video.mp4')
                         video_cache.publish(temporary, cache / 'download')
+            # 게임 화면이 영상 일부(세로 휴대폰 녹화 · 틀에 갇힌 영상)면 그 부분만 잘라 다시 만든다(tools/viewport.py, 캐시는 원본 그대로)
+            try:
+                box = viewport.fix(v)
+            except Exception as error:
+                box = None
+                print(f"{rid}: viewport crop skipped ({error})", flush=True)
+            if box:
+                e["viewport"] = list(box)
+                print(f"{rid}: video{i} cropped to the game area {box}", flush=True)
     json.dump(entries, open(os.path.join(d, "videos.json"), "w", encoding="utf8"), ensure_ascii=False, indent=1)
     ok = all(os.path.exists(os.path.join(d, e["file"])) for e in entries)
     parts = ", ".join(f"{e['file']}=p{e['part']}/{e['parts']}{'*' if e['run_part'] else ''}" for e in entries)
