@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = 3
+VERSION = 4
 TURN_STEP = 0.33      # 아하 타임은 맨 위 칸에 1초 남짓 머문다
 TURN_THRESH = 0.76    # 아하 타임 0.82~0.84, 아닌 때 0.69 이하(WarNfx8RjWs 139 · 384 · 627초)
 TURN_SURE = 0.80
@@ -78,8 +78,32 @@ def turn_templates():
     return _turn
 
 
-def turn_score(f):
-    """맨 위 칸이 아하인지(점수, 종류). 720p 로 맞춰 왼쪽 위 칸만 본다."""
+def bars(video, start, end, n=7):
+    """위아래 검은 띠 (top, bottom). 21:9 녹화를 16:9 로 담은 영상(rev_1t5x4u8, 위아래 64px)은 게임이 아래로 밀려
+    맨 위 칸이 ROI 밖으로 나간다. 전투 구간 몇 장의 중앙값으로 정한다."""
+    cap = cv2.VideoCapture(video)
+    tops, bots = [], []
+    for i in range(n):
+        cap.set(cv2.CAP_PROP_POS_MSEC, (start + (end - start) * (i + 0.5) / n) * 1000)
+        ok, f = cap.read()
+        if not ok:
+            continue
+        r = f.mean(axis=(1, 2))
+        lit = np.where(r > 12)[0]
+        if len(lit):
+            tops.append(int(lit[0]))
+            bots.append(int(lit[-1]) + 1)
+    cap.release()
+    if not tops:
+        return 0, None
+    top, bot = int(np.median(tops)), int(np.median(bots))
+    return (top, bot) if top >= 8 and bot - top >= 200 else (0, None)
+
+
+def turn_score(f, band=(0, None)):
+    """맨 위 칸이 아하인지(점수, 종류). 검은 띠를 뺀 게임 화면을 720p 로 맞춰 왼쪽 위 칸만 본다."""
+    if band[0] or band[1]:
+        f = f[band[0]:band[1]]
     H, W = f.shape[:2]
     g = cv2.resize(f, (int(round(W * 720.0 / H)), 720)) if H != 720 else f
     roi = g[20:110, 0:300]      # 좌우 검은 띠로 게임이 밀린 영상(rev_58ddxb, +70px)도
@@ -96,7 +120,7 @@ def scan(video, start, end, step=None, max_frames=80, turn_step=TURN_STEP):
     hits, turns, n = [], [], 0
     cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, start) * 1000)
     t, next_heart, next_turn = max(0.0, start), start + 1.0, start
-    every = max(1, int(round(fps * turn_step)))
+    band = bars(video, start, end)
     k = 0
     while t < end:
         if not cap.grab():
@@ -110,7 +134,7 @@ def scan(video, start, end, step=None, max_frames=80, turn_step=TURN_STEP):
             continue
         if t >= next_turn:
             next_turn = t + turn_step
-            v, kind = turn_score(f)
+            v, kind = turn_score(f, band)
             if v >= TURN_THRESH:
                 turns.append((round(t, 2), kind, round(v, 3)))
         if t >= next_heart:
