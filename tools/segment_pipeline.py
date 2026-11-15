@@ -211,6 +211,20 @@ def associate(segments, showcases, index):
     # Require the full alternating pattern, including one per battle.
     if len(candidates) == count and {c.get('after_battle') for c in candidates} == set(range(1, count + 1)):
         return next(c for c in candidates if c['after_battle'] == index + 1), False
+    # 전투 몇 개만 바로 뒤에 쇼케이스가 있는 영상(rev_c05pdt · rev_8rjn1s: 전투 3개, t= 로 고른 전투 바로 뒤에만 쇼케이스).
+    # 고른 전투와 다음 전투 사이에 쇼케이스 묶음이 꼭 하나면 그것이 이 전투의 것이다.
+    own = [c for c in candidates if c.get('after_battle') == index + 1]
+    if len(own) == 1 and index + 1 < count:
+        return own[0], False
+    # 고른 전투 뒤에 쇼케이스가 없고 맨 끝(마지막 전투 뒤)에만 하나 있으면 같이 쓰는 쇼케이스(5-in-1 영상).
+    # 맨 끝에 둘 이상이면(rev_hadg6k: 「PF 1 & 2」 · 「Starward」 두 묶음) 어느 것인지 몰라 사람에게.
+    tail = [c for c in candidates if c.get('after_battle') == count]
+    if not own and len(tail) == 1 and index + 1 < count:
+        return tail[0], True
+    if len(own) == 1 and index + 1 == count:
+        # 앞 전투 가운데 자기 쇼케이스가 없는 것이 있으면 이 맨 끝 쇼케이스를 그 전투와 같이 쓰는 것
+        orphan = any(not any(c.get('after_battle') == i for c in candidates) for i in range(1, count))
+        return own[0], orphan
     raise ValueError('Mixed or missing showcase sequence; manual review required')
 
 
