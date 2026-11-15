@@ -108,7 +108,8 @@ def detect_lang(rev):
 
 
 GP = {'revive': {'KR': '카스토리스', 'EN': 'Castorice', 'CN': '遐蝶', 'JP': 'キャストリス'},
-      'firewall': {'KR': '은랑 LV.999', 'EN': 'Silver Wolf LV.999', 'CN': '银狼LV.999', 'JP': '銀狼LV.999'}}
+      'firewall': {'KR': '은랑 LV.999', 'EN': 'Silver Wolf LV.999', 'CN': '银狼LV.999', 'JP': '銀狼LV.999'},
+      'aha': {'KR': '에이언즈★아하', 'EN': 'Aeon ★ Aha', 'CN': '星神★阿哈', 'JP': '星神★アッハ'}}
 CAT = {'CN': {'0-Cycle': '0T', 'full stars': '满星', 'Clear': '通关', '0 AV': '0行动值'},
        'JP': {'0-Cycle': '0ラウンド', 'full stars': '星3', 'Clear': 'クリア', '0 AV': '0行動値'}}
 SEP = {'KR': ', ', 'EN': ', ', 'CN': '、', 'JP': '、'}

@@ -5,7 +5,7 @@ python auto_judge.py <rev>   → runs/<rev>/auto.json + 요약(영어 디스코�
 import os, sys, re, json, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import judge, hud, gp, tabs, scan_battle_boundaries      # noqa: E402
+import judge, hud, gp, tabs, scan_battle_boundaries, aha_gp      # noqa: E402
 from judge import ROOT, ocr      # noqa: E402
 import cv2                       # noqa: E402
 
@@ -671,8 +671,19 @@ def run(rev, do_gp=True, reuse=False):
         # 편성에 1511 이 있으면 반드시 발동하므로 문제 없고, 없으면 도구가 확인하지 못했다고만 알린다
         aha_flags = sorted(f for f in flags if f.startswith('aha'))
         in_team = any((s0.get(f'p{j}_char') or '').startswith('Aeon') for j in range(1, 5))
-        if aha_flags and not in_team:
-            out['check_reasons'].append(f"Aha Global Passive ({', '.join(aha_flags)}) submitted and Aeon is not on the team: use of the passive is not verified by the tool")
+        # 아하 보유 효과: 웃음 포인트 아이콘이 하트(보라 IconElation_1151101 / 붉은 IconElation_1511)로 바뀌는지(tools/aha_gp.py)
+        if cache.get('aha', {}).get('version') != aha_gp.VERSION:
+            vpath = os.path.join(ROOT, rev, vids[run_vid].get('file', f'video{run_vid}.mp4'))
+            a0, a1 = (battle_interval if battle_interval else (0.0, tabs.probe(vpath)[0]))
+            ah = aha_gp.scan(vpath, a0, a1)
+            cache['aha'] = dict(ah, version=aha_gp.VERSION)
+        ah = cache['aha']
+        out['gp']['aha'] = {'present': ah['present'], 'hits': len(ah['hits']), 'frames': ah['frames'],
+                            'first': ah['hits'][0][0] if ah['hits'] else None, 'kind': ah['hits'][0][1] if ah['hits'] else None}
+        if ah['present'] and not aha_flags:
+            prob('Global Passive missing: Aeon ★ Aha', 'gp_missing', who='aha', t=ah['hits'][0][0])
+        elif aha_flags and not in_team and not ah['present']:
+            out['check_reasons'].append(f"Aha Global Passive ({', '.join(aha_flags)}) submitted, but the Elation heart icon was not found in {ah['frames']} battle frames")
         for f in sorted((flags & {'revive', 'firewall'}) - seen):
             if f == 'revive':
                 # 카스토리스: 제출에 있는데 배너를 못 찾으면, 실제로 안 썼든 도구가 놓쳤든 사람이 본다(사용자, 2026-10-08)

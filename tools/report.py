@@ -204,6 +204,19 @@ def gp_lines(g, video_url='', rev=None, local_url=None):
 
     local_base = local_play_url(rev) if local_url is None else local_url
 
+    aha = g.get('aha') or {}
+    aha_flags = sorted(f for f in flags if f.startswith('aha'))
+    if aha.get('present') or aha_flags:
+        name = 'Aeon ★ Aha' + (f" ({', '.join(aha_flags)})" if aha_flags else '')
+        if aha.get('present') and aha_flags:
+            out.append(f'{ROW_MARK[OK]} {name}')
+        elif aha.get('present'):
+            out.append(f'{ROW_MARK[BAD]} {name} **not submitted**')
+        else:
+            out.append(f'{ROW_MARK[UNSURE]} {name} heart icon **not found**')
+        if aha.get('first') is not None:
+            out[-1] += f" (first at {int(aha['first'])}s)"
+
     for flag in ('revive', 'firewall'):
         if flag in flags and flag in seen:
             line = f'{ROW_MARK[OK]} {GP_NAME[flag]}'
