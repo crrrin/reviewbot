@@ -50,12 +50,23 @@ def usable_battle(segment):
                  ['Start has no readable wave number; verify boundary']))
 
 
+LEAD_IN_MAX = 30.0
+
+
+def lead_in(zone, first):
+    """영상 맨 앞(0초)에서 시작해 첫 완전한 전투 시작 배너 바로 앞에서 끝나는 30초 미만 조각.
+    전투 준비 화면 · 로딩 화면의 HUD 를 「시작 추정」으로 잡은 것이거나 앞 시도의 끝자락이라 런이 될 수 없다
+    (캐시 13건: 0~3.5 · 0~8.5 · 0~22초 …, 모두 그 뒤 전투가 제출 런). 첫 런은 30초 안에 시작하면 타임스탬프가 없어도 된다."""
+    return (zone['start'] <= 0.5 and zone['end'] <= first['start'] + 0.5
+            and zone['end'] - zone['start'] < LEAD_IN_MAX)
+
+
 def select_battle(segments, anchor, unresolved=()):
     if not segments or any(not usable_battle(s) for s in segments):
         raise ValueError('Battle boundaries incomplete or uncertain; manual review required')
     segments = sorted(segments, key=lambda s: s['start'])
     if anchor is None or anchor == 0:
-        if any(s['start'] <= segments[0]['start'] for s in unresolved):
+        if any(s['start'] <= segments[0]['start'] and not lead_in(s, segments[0]) for s in unresolved):
             raise ValueError('First battle is incomplete or uncertain; manual review required')
         return 0, segments[0]
     containing = [(i, s) for i, s in enumerate(segments) if s['start'] <= anchor < s['end']]
@@ -81,6 +92,7 @@ def timestamp_details(battle, anchor, unresolved=()):
         message = f'Submitted timestamp is {seconds} seconds {direction} the detected battle start.'
     skipped = delta < 0 and any(
         interval['start'] < battle['start'] and interval['end'] > anchor
+        and not (anchor <= 0.5 and lead_in(interval, battle))
         for interval in unresolved
     )
     reasons = []
