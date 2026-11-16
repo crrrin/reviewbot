@@ -72,9 +72,6 @@ def post(rev, res, item, dry=False):
     v, c, s, reasons, ev = build_note(rev, res, item)
     if dry:
         return json.dumps({'verdict': v, 'confidence': c, 'summary': s, 'reasons': reasons, 'evidence': ev}, ensure_ascii=False, indent=1)
-    other = mod_api.other_note(rev, item, fresh=True)   # 분석하는 사이 다른 봇이 메모를 달았으면 덮어쓰지 않는다
-    if other:
-        return f"note skipped: {other.get('author_name')} already left a {other.get('verdict')} note"
     try:
         mod_api.note(rev, v, c, s, reasons, ev)
         return 'note ok'
