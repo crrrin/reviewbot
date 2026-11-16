@@ -628,9 +628,20 @@ def run(rev, do_gp=True, reuse=False):
             if pl is None:
                 ded('hud_unread', 'Plight action-order cell at Battle Over not read')
             else:
-                used = 500 - (pl[0] * 100 + pl[1])
-                out['checks'].append(f'Action Value (HUD): last cell {pl[0]} | {pl[1]} -> 500 - ({pl[0]}x100 + {pl[1]}) = {used}')
-                if s0.get('action_value') and int(s0['action_value']) != used:
+                # 0라운드 300 + 그 뒤 라운드마다 100. 지난 라운드 수는 Cycles Used 로 센다: ⧗N 의 시작값이 스테이지마다 달라서
+                # (야불리 ⧗2, 숨겨진 스테이지 ⧗6) 「500 - (N×100 + x)」는 ⧗2 스테이지에서만 맞는다(rev_pngohf ⧗6 | 31).
+                if cyc is not None:
+                    used = 300 + 100 * cyc - pl[1]
+                    how = f'300 + 100x{cyc} cycles - {pl[1]}'
+                elif pl[0] <= 2:
+                    used = 500 - (pl[0] * 100 + pl[1])
+                    how = f'500 - ({pl[0]}x100 + {pl[1]})'
+                else:
+                    used, how = None, None
+                    ded('hud_unread', f'Plight cell {pl[0]} | {pl[1]} read but Cycles Used unknown')
+                if used is not None:
+                    out['checks'].append(f'Action Value (HUD): last cell {pl[0]} | {pl[1]} -> {how} = {used}')
+                if used is not None and s0.get('action_value') and int(s0['action_value']) != used:
                     prob(f"Action Value mismatch (submitted {s0['action_value']}, video {used})", 'av_mismatch', sub=s0['action_value'], video=used)
         if cyc is None:
             if not plight and pf_ambiguous != 'checked' and not any(k == 'mode_mismatch' for k in [i.get('kind') for i in out['problem_items']]):

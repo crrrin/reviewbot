@@ -199,7 +199,9 @@ def parse_plight(c, box):
         if not (re.fullmatch(r'\d', tn) and re.fullmatch(r'\d{1,3}', tx)):
             continue
         N, X = int(tn), int(tx)
-        if N > 2 or X > (300 if N == 2 else 100):      # 0라운드 300, 그 뒤 100씩
+        # 0라운드 300, 그 뒤 100씩. N(남은 라운드)의 시작값은 스테이지마다 다르다: 야불리 절망은 ⧗2, 이상 중재 숨겨진 스테이지
+        # (아사트 프라마드 절망)는 ⧗6 에서 시작한다(rev_pngohf: 「⧗6 | 31」을 N>2 라 버려 못 읽었다). 그래서 N 으로 x 상한을 정하지 않는다.
+        if X > 300:
             continue
         return N, X
     return None
