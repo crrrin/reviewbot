@@ -9,6 +9,10 @@ import cv2
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 구간 나누기는 마지막 궁 연출(HUD 없음)에서 전투를 끝내기도 한다. 마지막 행동이 쓴 행동값 · 사이클은 「전투 종료」 화면 HUD 에
+# 비로소 반영된다(rev_1f68mew: 구간 끝 566.6초 → 564.6초 「⧗2 | 26」으로 잘못 거절, 568초 전투 종료 화면은 「⧗2 | 13」 = 287).
+# 그래서 주어진 전투 끝 뒤 END_TAIL 초까지 읽는다. 결과 화면 · 쇼케이스에는 이 HUD 가 없어 읽히지 않는다.
+END_TAIL = 10.0
 sys.path.insert(0, HERE)
 import tabs               # noqa: E402
 from judge import ocr, norm, ROOT   # noqa: E402
@@ -230,7 +234,7 @@ def scan(rev, vid=0, model='chinese', mode='aa', plight=False, start=0.0, end=No
     video = os.path.join(d, vids[vid].get('file', f'video{vid}.mp4'))
     dur, W, H = tabs.probe(video)
     explicit_end = end is not None
-    end = min(dur, end) if explicit_end else dur
+    end = min(dur, end + END_TAIL) if explicit_end else dur
     tl = os.path.join(d, f'tabs{vid}', 'timeline.txt')
     if not explicit_end and os.path.exists(tl):
         ws = [float(m.group(1)) for m in re.finditer(r'window ([\d.]+)-', open(tl, encoding='utf8').read())]
@@ -427,7 +431,7 @@ def scan_cycles(rev, vid=0, mode='moc', start=0.0, end=None):
     video = os.path.join(d, vids[vid].get('file', f'video{vid}.mp4'))
     dur, W, H = tabs.probe(video)
     explicit_end = end is not None
-    end = min(dur, end) if explicit_end else dur
+    end = min(dur, end) if explicit_end else dur      # END_TAIL 은 안 붙인다: MoC 후반 시작 칸을 읽을 수 있다
     tl = os.path.join(d, f'tabs{vid}', 'timeline.txt')
     if not explicit_end and os.path.exists(tl):
         ws = [float(m.group(1)) for m in re.finditer(r'window ([\d.]+)-', open(tl, encoding='utf8').read())]
