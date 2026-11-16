@@ -121,6 +121,10 @@ def queue(out=None):
             if not got or len(items) >= int(r.get('total') or 0) or page >= 50:
                 break
             page += 1
+        notes = session_notes()
+        if notes is not None:
+            for x in items:
+                x['latest_note'] = notes.get(x['id'])
     else:
         r = call('GET', '/api/mod/reviews?filter=pending&limit=300&order=oldest')
         items = r.get('reviews', r) if isinstance(r, dict) else r
@@ -128,6 +132,37 @@ def queue(out=None):
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(items, open(out, 'w', encoding='utf8'), ensure_ascii=False, indent=1)
     return items, out
+
+
+def session_notes():
+    """{건 아이디: latest_note} — 봇 API 대기열에는 다른 봇이 단 메모가 없어서, 로그인 세션 토큰(mod_token)의 /api/mod 대기열에서 가져온다.
+    여러 봇이 같은 건을 다시 분석하고 메모를 서로 덮어쓰지 않게 하는 데 쓴다. 토큰이 없거나 만료 · 오류면 None(그때는 거르지 않는다)."""
+    cfg = config()
+    if not (os.environ.get('THEHERTA_TOKEN') or cfg.get('mod_token')):
+        return None
+    if not os.environ.get('THEHERTA_TOKEN') and cfg.get('mod_token_expires_at') and cfg['mod_token_expires_at'] < time.time() + 60 \
+            and not all(cfg.get(k) for k in ('mod_refresh_token', 'supabase_url', 'supabase_anon_key')):
+        return None
+    try:
+        r = call('GET', '/api/mod/reviews?filter=pending&limit=300&order=oldest')
+    except SystemExit:
+        return None
+    items = r.get('reviews', r) if isinstance(r, dict) else r
+    return {x['id']: x.get('latest_note') for x in items or [] if isinstance(x, dict)}
+
+
+def other_note(rev, item=None, fresh=False):
+    """이 건에 나 말고 다른 쪽(다른 봇 · 사람)이 단 최신 메모. 없으면 None. fresh 면 사이트에서 다시 받는다(못 받으면 item 의 것)."""
+    import coord
+    me = coord.my_name()
+    n = (item or {}).get('latest_note')
+    if fresh:
+        notes = session_notes()
+        if notes is not None:
+            n = notes.get(rev)
+    if n and n.get('author_name') and n.get('author_name') != me:
+        return n
+    return None
 
 
 def claim(rev, ttl=300):

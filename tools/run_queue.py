@@ -503,6 +503,16 @@ def main():
                     pass
         revs = review_order(q, [x['id'] for x in q if not x.get('claimed_by_name') and x['id'] not in done_before
                                 and _c.in_shard(x['id'], shard0)])
+        if '--include-noted' not in a:
+            # 다른 봇 · 사람이 이미 메모(CHECK 등)를 단 건은 다시 분석하지 않는다: 같은 일을 두 번 하고 메모를 덮어쓴다.
+            # 그런 건은 사람이 그 메모를 보고 따로 판정한다. 목록은 work/noted_by_others.txt (대기열에 latest_note 가 있을 때만 거른다)
+            import mod_api as _m
+            noted = [r for r in revs if _m.other_note(r, byid_all[r])]
+            if noted:
+                open(os.path.join(WORK, 'noted_by_others.txt'), 'w', encoding='utf8').write(
+                    ''.join(f"{r}\t{byid_all[r]['latest_note'].get('author_name')}\t{byid_all[r]['latest_note'].get('verdict')}\n" for r in noted))
+                print(f'noted by others (skipped): {len(noted)} - work/noted_by_others.txt', flush=True)
+            revs = [r for r in revs if r not in set(noted)]
         if '--include-gated' not in a:
             # 합본 · 같은 영상 여러 런 · 타임스탬프 없는 다중 런처럼 도구가 분석하지 않고 곧바로 CHECK 로 내는 건은 자동 대기열에서 뺀다
             # (한도만 쓰고 메모를 옛것 위에 덮어쓴다). 사람이 combined.py · work/_manual.py 로 따로 판정한다. 목록은 work/gated.txt
