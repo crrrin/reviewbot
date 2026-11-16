@@ -58,3 +58,15 @@ YT = _ytdlp()
 def config():
     import json
     return json.load(open(CONFIG, encoding='utf8')) if os.path.exists(CONFIG) else {}
+
+
+def save_config(cfg):
+    """config.json 을 임시 파일에 다 쓴 뒤 바꿔 넣는다. 디스크가 가득 찬 채 바로 덮어쓰다 0바이트가 되어
+    bot_key · 웹후크를 잃은 일이 있었다(2026-11-16)."""
+    import json
+    tmp = CONFIG + '.tmp'
+    with open(tmp, 'w', encoding='utf8') as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, CONFIG)

@@ -20,7 +20,7 @@ python mod_api.py decide <rev_id> approve --yes
 python mod_api.py decide <rev_id> reject "사유" --yes  승인 · 거절(--yes 없으면 보내지 않고 보낼 내용만 보인다)"""
 import os, sys, json, time, urllib.request, urllib.error
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import CONFIG, WORK, RUNS, config   # noqa: E402
+from paths import CONFIG, WORK, RUNS, config, save_config   # noqa: E402
 
 BASE = os.environ.get('THEHERTA_BASE', 'https://theherta.com')
 
@@ -30,7 +30,7 @@ def bot_key():
 
 
 def _save_cfg(cfg):
-    json.dump(cfg, open(CONFIG, 'w', encoding='utf8'), ensure_ascii=False, indent=1)
+    save_config(cfg)
 
 
 def refresh(cfg):

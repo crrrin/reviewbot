@@ -4,7 +4,7 @@
 import os, sys, json, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import websocket                      # noqa: E402
-from paths import CONFIG, config      # noqa: E402
+from paths import config, save_config  # noqa: E402
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 9333
 JS = """(()=>{const o={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^sb-.*auth-token/.test(k)){try{const v=JSON.parse(localStorage.getItem(k));o[k]={a:v.access_token||(v.currentSession&&v.currentSession.access_token),r:v.refresh_token||(v.currentSession&&v.currentSession.refresh_token),e:v.expires_at||(v.currentSession&&v.currentSession.expires_at)}}catch(e){}}}return JSON.stringify(o)})()"""
@@ -36,5 +36,5 @@ if __name__ == '__main__':
     if v.get('e'):
         cfg['mod_token_expires_at'] = int(v['e'])
     cfg.setdefault('supabase_url', f'https://{ref}.supabase.co')
-    json.dump(cfg, open(CONFIG, 'w', encoding='utf8'), ensure_ascii=False, indent=1)
+    save_config(cfg)
     print('mod_token saved; expires in', int(v.get('e') or 0) - int(time.time()), 's; project', ref)
