@@ -703,6 +703,22 @@ def run(rev, do_gp=True, reuse=False):
                 prob('Global Passive not triggered: Aeon ★ Aha', 'gp_not_triggered', who='aha')
             else:
                 out['check_reasons'].append(f"Aha Global Passive ({', '.join(aha_flags)}) submitted, but neither the Elation heart icon nor an Aha turn was found in the battle")
+
+        if not in_team and turns:
+            lc = b.get('off_team_aha_lc') or {}
+            out['gp']['aha']['light_cone'] = lc
+            if lc.get('status') != 'verified':
+                out['check_reasons'].append(
+                    'Off-team Aha Global Passive triggered, but her equipped Light Cone '
+                    'could not be verified in the selected showcase (signature LC requires readable S1-S5)'
+                )
+            elif set(aha_flags) != {lc['expected_flag']}:
+                out['problems'].append(
+                    f"Off-team Aha Global Passive flag mismatch: "
+                    f"{', '.join(aha_flags) or 'none'} submitted, "
+                    f"{lc['expected_flag']} required by her showcased Light Cone"
+                )
+
         for f in sorted((flags & {'revive', 'firewall'}) - seen):
             if f == 'revive':
                 # 카스토리스: 제출에 있는데 배너를 못 찾으면, 실제로 안 썼든 도구가 놓쳤든 사람이 본다(사용자, 2026-10-08)
@@ -746,10 +762,10 @@ def run(rev, do_gp=True, reuse=False):
     # 판정
     conf = max(0, 100 - sum(x for x, _ in out['deductions']))
     out['confidence'] = conf
-    if out['check_reasons']:
-        out['verdict'] = 'CHECK'          # 다른 문제가 있어도 사람에게(문제 목록은 그대로 남긴다)
-    elif out['problems']:
+    if out['problems']:
         out['verdict'] = 'REJECT'
+    elif out['check_reasons']:
+        out['verdict'] = 'CHECK'
     elif conf <= CHECK_BELOW or any(w.endswith('unreadable') or 'not read' in w for _, w in out['deductions']):
         out['verdict'] = 'CHECK'
     else:
