@@ -544,6 +544,17 @@ def run(rev, do_gp=True, reuse=False):
                     + f" (shard score {c.get('ex_score')})")
     out['build'] = [{k: c.get(k) for k in ('char', 'submitted', 'lc_seen', 'lc_match', 's_seen', 'e_seen', 'e_gray', 'e_alt', 'lock_scores', 'lc_t', 'e_t', 'e_uncertain', 'e_uncertainty_reasons', 'e_candidates', 'e_retry', 'lc_uncertain', 's_uncertain', 'lc_retry', 'ex', 'ex_seen', 'ex_score', 'orb_score')}
                     for c in b['chars']]
+    # 제출 캐릭터의 빌드 화면이 빠졌는데 팀 밖 캐릭터 페이지가 이름이 뚜렷이 보이면 편성이 다를 수 있다(rev_q63xbk: 요광 대신 펄).
+    # 쇼케이스로 12명 전부를 보여 주는 영상도 있어 바로 거절하지 않고 사람에게(거절 템플릿 5 「편성이 다름」)
+    missing = [c['char'] for c in b['chars'] if c.get('lc_seen') is None or c.get('e_t') is None]
+    fp = b.get('foreign_pages') or []
+    if missing and fp:
+        seen = {}
+        for p_ in fp:
+            seen.setdefault(p_['char'], p_['t'])
+        out['check_reasons'].append(
+            'Possible team mismatch: build pages not found for ' + ', '.join(missing) + '; the showcase shows '
+            + ', '.join(f'{n} ({t:.0f}s)' for n, t in seen.items()) + ', who is not in the submitted team')
     tm('build')
     # 2) UID
     uid = read_uid(rev, b['frames'], selection)

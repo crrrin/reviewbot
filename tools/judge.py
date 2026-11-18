@@ -162,17 +162,25 @@ def rival_score(text, team_en):
     """text 가 제출 팀 밖의 실제 캐릭터 이름과 얼마나 맞는가(가장 높은 것). 쇼케이스가 12명 전부를 보여 주는 영상에서
     제출 캐릭터와 이름이 비슷한 다른 캐릭터(Acheron ↔ Archer 0.77)의 페이지를 제출 캐릭터 것으로 읽지 않으려는 용도."""
     import imgrec
+    return rival_name(text, team_en)[0]
+
+
+def rival_name(text, team_en):
+    """rival_score 와 같되 (점수, 그 캐릭터 영어 이름)."""
+    import imgrec
     key = (norm(text), tuple(sorted(team_en)))
     if key not in _rival_cache:
         mine = {en_key(c) for c in team_en} | set(team_en)
-        top = 0.0
+        top, who = 0.0, None
         for name in list(imgrec.avatar_ids()) + EXTRA_RIVALS:
             if name in mine or name.startswith('Trailblazer'):
                 continue
-            top = max(top, best(text, name)[0])
+            s = best(text, name)[0]
+            if s > top:
+                top, who = s, name
             if top >= 0.97:
                 break
-        _rival_cache[key] = top
+        _rival_cache[key] = (top, who)
     return _rival_cache[key]
 
 
@@ -1422,9 +1430,21 @@ def judge(rev, build_indices=None):
             names_only = [t for t in ls if norm(t) not in PATH_WORDS and norm(t) not in static and norm(t)]
             team_en = [c_['char'] for c_ in chars]
             sc = sorted(((max((best_vs_team(t, c['char'], team_en) for t in names_only), default=0), k2) for k2, c in enumerate(chars)), reverse=True)
-            if tb and sc and sc[0][0] < 0.7 and names_only:
-                sc = [(0.7, tb[0])] + [z for z in sc if z[1] != tb[0]]     # 어느 이름과도 안 맞는 이름 줄 = 플레이어 이름 = 개척자
-            dets.append({'vid': vi, 't0': a, 't1': b, 'text': ' '.join(ls), 'who': sc, 'elem': el})
+            # 이름 줄이 팀 밖 실제 캐릭터 이름으로 읽히면 그 캐릭터 화면이다(rev_q63xbk: 「★パ一ル」 = 펄을 개척자로 봤다)
+            rv = max((rival_name(t.lstrip('★☆'), team_en) for t in names_only), default=(0.0, None))
+            foreign_det = rv[1] if rv[0] >= 0.85 and (not sc or sc[0][0] < 0.7) else None
+            if foreign_det:
+                sc = [(0.0, k2) for _, k2 in sc]
+            elif tb and sc and sc[0][0] < 0.7 and names_only:
+                # 어느 이름과도 안 맞는 이름 줄 = 플레이어 이름 = 개척자. 단 속성 아이콘이 개척자의 속성과 다르면 아니다
+                try:
+                    import imgrec
+                    tb_el = imgrec.element_of_char(en_key(chars[tb[0]]['char']))
+                except Exception:
+                    tb_el = None
+                if not (el and tb_el and el != tb_el):
+                    sc = [(0.7, tb[0])] + [z for z in sc if z[1] != tb[0]]
+            dets.append({'vid': vi, 't0': a, 't1': b, 'text': ' '.join(ls), 'who': sc, 'elem': el, 'foreign': foreign_det})
     # 디테일 화면 뒤에 처음 나오는 광추 한 장 · 성혼 한 장만 그 캐릭터 것으로 본다. 같은 탭이 디테일 없이 또 나오면
     # 그 사이 캐릭터 줄로 넘긴 것이라 이어받지 않는다(종말 열람 화면 등에서 광추 · 성혼을 먼저 넘겨 보고 디테일을 나중에 보는 경우)
     for fr in frames:
@@ -1468,7 +1488,8 @@ def judge(rev, build_indices=None):
             used.add(fr['char_k'])
     rest = [k for k in range(len(chars)) if k not in used]
     # 광추 제목이 어떤 제출 광추와도 안 맞는 프레임(광추 화면이 아니거나 패널이 덜 뜬 것)은 누구 것으로도 정하지 않는다
-    unk = [f for f in lcf if f['char_k'] is None and f['lc_scores'] and f['lc_scores'][0][0] >= 0.5]
+    # 팀 밖 캐릭터 페이지(foreign)는 소거 · 짝 맞춤에도 쓰지 않는다(rev_q63xbk: 펄 페이지가 같은 광추를 낀 요광으로 붙어 편성이 틀린 제출을 승인 추천)
+    unk = [f for f in lcf if f['char_k'] is None and not f.get('foreign') and f['lc_scores'] and f['lc_scores'][0][0] >= 0.5]
     unk.sort(key=lambda f: -sum(1 for sc, k in f['lc_scores'] if sc >= 0.8 and k in rest))
     for fr in unk:
         # 광추 제목이 남은 캐릭터 중 하나와만 맞으면 그 캐릭터
@@ -1491,7 +1512,7 @@ def judge(rev, build_indices=None):
     for L, G in by_lc.items():
         if len(G) < 2:
             continue
-        F = sorted([f for f in lcf if f['char_k'] is None and f.get('lc_img') and f['lc_img']['id'] == L], key=lambda f: (f['vid'], f['t']))
+        F = sorted([f for f in lcf if f['char_k'] is None and not f.get('foreign') and f.get('lc_img') and f['lc_img']['id'] == L], key=lambda f: (f['vid'], f['t']))
         if len(F) != len(G):
             continue
         left, free = list(F), list(G)
@@ -1525,10 +1546,13 @@ def judge(rev, build_indices=None):
         # 워터마크가 이름을 덮어 모든 머리글이 비슷하게 읽히면(다른 캐릭터 머리글과도 비슷하면) 머리글로 잇지 않는다
         if same and len({l['char_k'] for l in lcf if l['vid'] == fr['vid'] and l['char_k'] is not None and sim(l['header'], fr['header']) >= 0.6}) > 1:
             same = []
-        prev = [l for l in lcf if l['vid'] == fr['vid'] and l['t'] < fr['t'] and l['char_k'] is not None]
+        prev = [l for l in lcf if l['vid'] == fr['vid'] and l['t'] < fr['t'] and (l['char_k'] is not None or l.get('foreign'))]
         if same:
             l = min(same, key=lambda l: abs(l['t'] - fr['t']))
             fr['char_k'], fr['how'] = l['char_k'], f"same header as LC {l['t']}"
+        elif prev and prev[-1].get('foreign'):
+            # 바로 앞 광추 화면이 팀 밖 캐릭터 것이면 이 성혼 화면도 그 캐릭터 것으로 본다(그 앞 캐릭터에게 붙이지 않는다)
+            fr['char_k'], fr['how'] = None, f"after other character LC {prev[-1]['t']}"
         elif prev:
             fr['char_k'], fr['how'] = prev[-1]['char_k'], f"after LC {prev[-1]['t']}"
         else:
@@ -1551,6 +1575,23 @@ def judge(rev, build_indices=None):
         pick = rest[0] if len(rest) == 1 else (tb[0] if tb and tb[0] in rest else None)
         if pick is not None:
             f2['char_k'], f2['how'] = pick, f2['how'] + ' -> different locks from earlier frame, given to ' + ('the only one left' if len(rest) == 1 else 'Trailblazer')
+    # 쇼케이스는 캐릭터 한 명의 페이지를 이어서 보고 넘어간다. 팀 밖 캐릭터 페이지 뒤의 프레임 가운데 추정(소거 · 상세 화면 · 앞 광추 따라가기 …)으로
+    # 붙은 것은, 이름이 뚜렷한 다음 프레임이 나올 때까지 그 팀 밖 캐릭터 것으로 본다(rev_q63xbk: 펄 페이지 452.62 광추가 소거로 요광, 451.29 성혼이 상세 화면으로 개척자)
+    def strong(f):
+        h = str(f.get('how', ''))
+        m = re.match(r'lc title (\d\.\d+)', h)
+        return h.startswith('name ') or h.startswith('eidolon names') or bool(m and float(m[1]) >= 0.9)
+    in_foreign = None
+    marks = [{'vid': x['vid'], 't': x['t0'], 'foreign': True, 'det': True} for x in dets if x.get('foreign')]
+    for f in sorted(frames + marks, key=lambda f: (f['vid'], f['t'])):
+        if in_foreign is not None and in_foreign[0] != f['vid']:
+            in_foreign = None
+        if f.get('foreign'):
+            in_foreign = (f['vid'], f['t'])
+        elif strong(f):
+            in_foreign = None
+        elif in_foreign is not None and f.get('char_k') is not None:
+            f['char_k'], f['how'] = None, f"after other character page {in_foreign[1]} (was {f.get('how')})"
     # 머리글의 길 아이콘(모든 언어 화면에 있다). 검증 전용 — 읽은 캐릭터의 길과 아이콘의 길이 다르면 path_conflict(→ auto_judge 가 CHECK).
     # 아이콘은 머리글 글자보다 0.2초쯤 늦게 바뀌므로(rev_1p4qums 207.7초: 글자는 새 캐릭터, 아이콘은 앞 캐릭터) 저장 프레임이 아니라
     # 0.45초 뒤 프레임에서 읽고, 어긋나면 0.9초 뒤에 한 번 더 본다. 둘 다 어긋나야 충돌이다. 뒤 프레임을 볼 수 없으면(다음 저장 프레임이 바로 뒤)
@@ -1816,6 +1857,18 @@ def judge(rev, build_indices=None):
     res = {'rev': rev, 'ocr_model': model, 'chars': out, 'details': [{k: v for k, v in x.items()} for x in dets],
            'frames': [{k: v for k, v in f.items() if k not in ('path', 'lay', 'details')} for f in frames]}
     res['build_indices'] = sorted(build_indices)
+    # 이름이 뚜렷이 읽힌 팀 밖 캐릭터 페이지(편성이 제출과 다른지 사람이 볼 근거, auto_judge)
+    team_en = [c['char'] for c in chars]
+    res['foreign_pages'] = []
+    for f in frames:
+        if f.get('foreign') and f.get('header'):
+            sc, nm = rival_name(f['header'], team_en)
+            if nm and sc >= 0.9:
+                res['foreign_pages'].append({'vid': f['vid'], 't': f['t'], 'tab': f['tab'], 'header': f['header'], 'char': nm, 'score': round(sc, 2)})
+    for x in dets:
+        if x.get('foreign'):
+            res['foreign_pages'].append({'vid': x['vid'], 't': x['t0'], 'tab': 'Details', 'header': x['text'], 'char': x['foreign']})
+    res['foreign_pages'].sort(key=lambda p: (p['vid'], p['t']))
     res['language_selection'] = language_selection
     json.dump(res, open(os.path.join(d, 'judge.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=1, default=str)
     return res
