@@ -1233,6 +1233,50 @@ def select_language(frames, chars, forced_model=None, rev='language'):
     return model, language_selection
 
 
+
+def off_team_aha_lc(frames):
+    """Conservative LC evidence from Aha headers, independent of team assignment."""
+    import imgrec
+    aha = 'Aeon ★ Aha'
+    signature = 'Upon the First Echo of "Aha"'
+    catalog = imgrec.lc_ids()[1]
+    evidence = []
+    candidates = 0
+    for fr in frames:
+        if fr['tab'] != 'LightCone':
+            continue
+        header = fr.get('aha_header', '')
+        score = best(header, aha)[0]
+        if score < .9 or score - rival_score(header, [aha]) < .1:
+            continue
+        candidates += 1
+        name = (fr.get('lc_img') or {}).get('name')
+        if not name:
+            ranked = sorted(
+                ((lc_score([fr.get('panel_title', '')], {'lc': n}), n)
+                 for n in set(catalog.values()) if n),
+                reverse=True,
+            )
+            if not ranked or ranked[0][0] < .9:
+                continue
+            if len(ranked) > 1 and ranked[0][0] - ranked[1][0] < .1:
+                continue
+            name = ranked[0][1]
+        is_signature = en_key(name) == en_key(signature)
+        level = fr.get('superimp') if is_signature else 0
+        evidence.append({
+            'vid': fr['vid'], 't': fr['t'], 'lc': name,
+            'superimposition': fr.get('superimp'),
+            'flag': f'aha{level}' if level in range(6) and
+                    (not is_signature or level in range(1, 6)) else None,
+        })
+    flags = {e['flag'] for e in evidence}
+    verified = bool(evidence) and None not in flags and len(flags) == 1
+    return {'status': 'verified' if verified else 'uncertain',
+            'expected_flag': next(iter(flags)) if verified else None,
+            'candidate_frames': candidates, 'evidence': evidence}
+
+
 def judge(rev, build_indices=None):
     path_words()
     d = os.path.join(ROOT, rev)
@@ -1293,6 +1337,7 @@ def judge(rev, build_indices=None):
         lay = fr['lay']
         hl = read_lines(header_crop(f, lay), [model])[model] if lay else []
         fr['header'] = header_name(hl)
+        fr['aha_header'] = fr['header']
         team_en = [c_['char'] for c_ in chars]
         fr['who'] = sorted(((best_vs_team(fr['header'], c['char'], team_en), k) for k, c in enumerate(chars)), reverse=True)
         # 머리글 윗줄의 길 이름(「Remembrance / Chryro」)이 이름이 어렴풋이 맞은 캐릭터의 길과 다르면 그 캐릭터가 아니다
@@ -1870,6 +1915,10 @@ def judge(rev, build_indices=None):
             res['foreign_pages'].append({'vid': x['vid'], 't': x['t0'], 'tab': 'Details', 'header': x['text'], 'char': x['foreign']})
     res['foreign_pages'].sort(key=lambda p: (p['vid'], p['t']))
     res['language_selection'] = language_selection
+    # Keep the team matcher unchanged: Aha is supplemental evidence, not a fifth teammate.
+    if not any(c['char'].startswith('Aeon') for c in chars):
+        res['off_team_aha_lc'] = off_team_aha_lc(frames)
+
     json.dump(res, open(os.path.join(d, 'judge.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=1, default=str)
     return res
 
